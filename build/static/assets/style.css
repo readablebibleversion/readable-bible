@@ -114,8 +114,42 @@ img { display: block; }
 .chapter .book-name { font-size: clamp(2rem, 6vw, 2.8rem); font-weight: 600; }
 .chapter .ch-num { font-family: var(--sans); font-size: .85rem; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
 .text { font-family: var(--serif); font-size: var(--reader-size); line-height: 1.85; margin: 0; }
-.verse { scroll-margin-top: 90px; }
-.poetry .verse { display: block; margin-bottom: .7em; padding-left: 1.4em; text-indent: -1.4em; }
+/* One verse per line; continuation lines indent past the verse number. */
+.verse { display: block; margin: 0 -10px .55em; padding: 2px 10px 2px calc(10px + 1.4em); text-indent: -1.4em; border-radius: 8px; scroll-margin-top: 90px; cursor: pointer; transition: background-color .15s; }
+.poetry .verse { margin-bottom: .8em; }
+.verse:hover { background: color-mix(in srgb, var(--accent-soft) 60%, transparent); }
+.verse.selected { background: var(--accent-soft); }
+.cbadge { display: inline-block; text-indent: 0; margin-left: .4em; padding: 0 .5em; border-radius: 99px; background: var(--accent-soft); color: var(--accent); font-family: var(--sans); font-size: .6em; font-weight: 600; line-height: 1.7; vertical-align: .2em; }
+.comment-hint { text-align: center; color: var(--muted); font-size: .85rem; margin: -18px 0 24px; }
+
+/* Comments panel */
+.cp { position: fixed; z-index: 30; right: 0; top: 0; bottom: 0; width: min(420px, 100%); display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--line); box-shadow: -12px 0 32px rgba(0,0,0,.12); transform: translateX(100%); transition: transform .2s ease; }
+.cp.open { transform: none; }
+.cp-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+.cp-head h2 { margin: 0; font-family: var(--serif); font-size: 1.2rem; }
+.cp-close { border: 0; background: none; color: var(--muted); font-size: 1.6rem; line-height: 1; cursor: pointer; padding: 4px 8px; }
+.cp-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
+.cp-verse { margin: 0 0 18px; padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--bg); font-family: var(--serif); white-space: pre-line; border-radius: 0 8px 8px 0; }
+.cp-list { list-style: none; margin: 0; padding: 0; }
+.cp-list li { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.cp-vote { flex: none; display: flex; flex-direction: column; align-items: center; min-width: 44px; padding: 6px 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; font-size: .85rem; font-weight: 600; cursor: pointer; }
+.cp-vote:hover:not(:disabled) { border-color: var(--accent); }
+.cp-vote.voted { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); cursor: default; }
+.cp-vote .arrow { font-size: .8rem; line-height: 1; }
+.cp-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cp-meta { color: var(--muted); font-size: .8rem; margin-top: 4px; }
+.cp-empty, .cp-status { color: var(--muted); font-size: .92rem; }
+.cp-form { border-top: 1px solid var(--line); padding: 14px 18px 18px; }
+.cp-form textarea { width: 100%; min-height: 90px; resize: vertical; padding: 10px 12px; font: inherit; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); }
+.cp-form .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }
+.cp-form .row span { color: var(--muted); font-size: .82rem; }
+.cp-form button { font: inherit; font-weight: 600; padding: 9px 18px; border: 0; border-radius: 10px; background: var(--accent); color: var(--bg); cursor: pointer; }
+.cp-form button:disabled { opacity: .6; cursor: default; }
+.cp-error { color: #b42318; font-size: .85rem; margin: 8px 0 0; }
+.hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+@media (max-width: 560px) {
+  .cp { top: auto; height: 82vh; width: 100%; border-left: 0; border-top: 1px solid var(--line); border-radius: 16px 16px 0 0; transform: translateY(100%); box-shadow: 0 -12px 32px rgba(0,0,0,.15); }
+}
 .verse:target { background: var(--accent-soft); border-radius: 4px; box-shadow: 0 0 0 3px var(--accent-soft); }
 .vnum { font-family: var(--sans); font-size: .58em; font-weight: 600; color: var(--vnum); margin: 0 .3em 0 .15em; vertical-align: .55em; line-height: 0; }
 .fn-ref { font-family: var(--sans); font-size: .6em; vertical-align: .6em; line-height: 0; text-decoration: none; margin-left: 1px; font-weight: 600; }

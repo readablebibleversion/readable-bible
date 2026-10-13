@@ -2,3 +2,5 @@
 site/
 __pycache__/
 ~$*.xlsx
+node_modules/
+.netlify/

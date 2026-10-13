@@ -1,0 +1,9 @@
+{
+  "name": "readable-bible",
+  "private": true,
+  "type": "module",
+  "description": "Readable English Bible website: verse comments backend (Netlify Functions)",
+  "dependencies": {
+    "@netlify/blobs": "^8.2.0"
+  }
+}
