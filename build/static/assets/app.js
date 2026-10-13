@@ -68,6 +68,8 @@
       saveSession('sessionId', sessionId);
     }
     var voted = session('voted', []);
+    var reported = session('reported', []);
+    function visible(c) { return reported.indexOf(c.id) === -1; }
 
     function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
     function ago(iso) {
@@ -101,7 +103,7 @@
     function updateBadges() {
       reader.querySelectorAll('.cbadge').forEach(function (b) { b.remove(); });
       var counts = {};
-      comments.forEach(function (c) { counts[c.verse] = (counts[c.verse] || 0) + 1; });
+      comments.filter(visible).forEach(function (c) { counts[c.verse] = (counts[c.verse] || 0) + 1; });
       Object.keys(counts).forEach(function (v) {
         var el = document.getElementById('v' + v);
         if (!el) return;
@@ -116,14 +118,15 @@
     function renderList() {
       if (current === null) return;
       if (!loaded) { status.textContent = 'Loading comments...'; list.innerHTML = ''; return; }
-      var mine = comments.filter(function (c) { return c.verse === current; })
+      var mine = comments.filter(function (c) { return c.verse === current && visible(c); })
         .sort(function (a, b) { return b.votes - a.votes || (b.created > a.created ? 1 : -1); });
       status.textContent = mine.length ? '' : 'No comments yet. Be the first to share a thought on this verse.';
       list.innerHTML = mine.map(function (c) {
         var has = voted.indexOf(c.id) !== -1;
         return '<li><button type="button" class="cp-vote' + (has ? ' voted' : '') + '" data-id="' + c.id + '"' + (has ? ' disabled aria-pressed="true"' : '') +
           ' aria-label="Upvote"><span class="arrow">&#9650;</span>' + c.votes + '</button>' +
-          '<div><p class="cp-text">' + esc(c.text) + '</p><div class="cp-meta">Anonymous &middot; ' + ago(c.created) + '</div></div></li>';
+          '<div><p class="cp-text">' + esc(c.text) + '</p><div class="cp-meta">Anonymous &middot; ' + ago(c.created) +
+            ' &middot; <button type="button" class="cp-report" data-id="' + c.id + '">Report</button></div></div></li>';
       }).join('');
     }
 
@@ -165,6 +168,20 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && panel.classList.contains('open')) close(); });
 
     list.addEventListener('click', function (e) {
+      var rep = e.target.closest('.cp-report');
+      if (rep) {
+        if (!confirm('Report this comment as rude or inappropriate? It will be hidden for you, and removed for everyone after several reports.')) return;
+        var rid = rep.dataset.id;
+        rep.disabled = true;
+        api({ action: 'report', book: book, chapter: chapter, id: rid }).then(function () {
+          reported.push(rid);
+          saveSession('reported', reported);
+          updateBadges();
+          renderList();
+          status.textContent = 'Thanks. The comment was reported.';
+        }).catch(function () { rep.disabled = false; });
+        return;
+      }
       var btn = e.target.closest('.cp-vote');
       if (!btn || btn.disabled) return;
       var id = btn.dataset.id;

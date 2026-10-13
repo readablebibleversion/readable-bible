@@ -26,8 +26,12 @@ Readers can click any verse to post an anonymous comment and upvote others (once
 Comments are handled by `netlify/functions/feedback.mjs` and stored in Netlify Blobs.
 
 - Spam protection: hidden honeypot field and 5 comments per visitor per 10 minutes.
-- Moderation: set an `ADMIN_TOKEN` environment variable in Netlify, then delete a comment with
-  `POST /feedback {"action":"delete","book":"john","chapter":3,"id":"<comment id>","token":"<ADMIN_TOKEN>"}`.
+- Blocked words: comments containing anything in `netlify/lib/moderation.mjs` are rejected.
+- Reports: each comment has a Report button. It hides the comment for the reporter right away,
+  and for everyone after 3 reports from different visitors.
+- Admin: set an `ADMIN_TOKEN` environment variable in Netlify, then
+  `POST /feedback {"action":"delete" or "restore","book":"john","chapter":3,"id":"<comment id>","token":"<ADMIN_TOKEN>"}`.
+  `restore` un-hides a comment that was reported by mistake.
 
 To test comments locally: `npx netlify-cli dev --dir site --functions netlify/functions --port 8888`
 

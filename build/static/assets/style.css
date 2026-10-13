@@ -139,6 +139,8 @@ img { display: block; }
 .cp-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .cp-meta { color: var(--muted); font-size: .8rem; margin-top: 4px; }
 .cp-empty, .cp-status { color: var(--muted); font-size: .92rem; }
+.cp-report { border: 0; background: none; padding: 0; font: inherit; color: var(--muted); text-decoration: underline; cursor: pointer; }
+.cp-report:hover { color: #b42318; }
 .cp-form { border-top: 1px solid var(--line); padding: 14px 18px 18px; }
 .cp-form textarea { width: 100%; min-height: 90px; resize: vertical; padding: 10px 12px; font: inherit; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--text); }
 .cp-form .row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }
