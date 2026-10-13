@@ -111,7 +111,33 @@ img { display: block; }
 .size-controls { display: flex; gap: 6px; }
 .size-controls button { font: inherit; font-size: .85rem; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--text); cursor: pointer; }
 .chapter h1 { font-family: var(--serif); text-align: center; margin: 24px 0 32px; display: flex; flex-direction: column; gap: 4px; }
-.chapter .book-name { font-size: clamp(2rem, 6vw, 2.8rem); font-weight: 600; }
+.chapter .book-name { font-size: clamp(2rem, 6vw, 2.8rem); font-weight: 600; color: inherit; text-decoration: none; }
+.chapter .book-name:hover { color: var(--accent); }
+.vnum a { color: inherit; text-decoration: none; }
+.vnum a:hover { text-decoration: underline; }
+
+/* Breadcrumbs, verse pages, book pages */
+.crumbs { font-size: .85rem; color: var(--muted); padding: 24px 0 0; }
+.crumbs a { color: var(--muted); text-decoration: none; }
+.crumbs a:hover { color: var(--accent); text-decoration: underline; }
+.crumbs span[aria-hidden] { margin: 0 4px; }
+.verse-page h1, .book-page h1 { font-family: var(--serif); font-size: clamp(2rem, 6vw, 2.8rem); margin: 12px 0 18px; line-height: 1.15; }
+.verse-big { margin: 0; padding: 28px 28px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 0 16px 16px 0; font-family: var(--serif); font-size: clamp(1.3rem, 3.4vw, 1.65rem); line-height: 1.55; }
+.verse-cite { color: var(--muted); font-size: .9rem; margin: 10px 0 0; }
+.verse-note { margin: 18px 0 0; padding: 12px 16px; background: var(--accent-soft); border-radius: 10px; font-size: .95rem; }
+.verse-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 24px 0 32px; }
+.verse-actions .btn { font: inherit; font-weight: 500; cursor: pointer; }
+.context { display: grid; gap: 12px; }
+.ctx { display: flex; flex-direction: column; gap: 4px; padding: 16px 18px; border: 1px solid var(--line); border-radius: 12px; text-decoration: none; color: var(--text); font-family: var(--serif); }
+.ctx:hover { border-color: var(--accent); }
+.ctx .ref { font-family: var(--sans); font-size: .78rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); }
+.book-meta { color: var(--muted); margin: 0 0 20px; }
+.book-opening { margin: 0 0 28px; padding: 22px 24px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.book-opening p { font-family: var(--serif); font-size: 1.25rem; margin: 0 0 8px; }
+.book-opening cite { font-style: normal; font-weight: 600; font-size: .85rem; }
+.book-page h2 { font-family: var(--serif); font-size: 1.3rem; }
+.ch-grid.big { padding: 0; margin-bottom: 24px; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); }
+.ch-grid.big a { padding: 12px 0; font-size: 1rem; }
 .chapter .ch-num { font-family: var(--sans); font-size: .85rem; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: var(--muted); }
 .text { font-family: var(--serif); font-size: var(--reader-size); line-height: 1.85; margin: 0; }
 /* One verse per line; continuation lines indent past the verse number. */

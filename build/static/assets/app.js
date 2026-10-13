@@ -55,7 +55,8 @@
   // Verse comments: click a verse to read, post, and upvote anonymous comments.
   function setupComments(reader) {
     var book = reader.dataset.book, chapter = +reader.dataset.chapter;
-    var bookName = reader.querySelector('.book-name').textContent;
+    var bookName = BOOKS.find(function (b) { return b[1] === book; })[0];
+    if (bookName === 'Psalms') bookName = 'Psalm';
     var comments = [], loaded = false, current = null;
 
     function session(key, fallback) {
@@ -212,8 +213,25 @@
         .then(function () { btn.disabled = false; });
     });
 
-    load();
+    load().then(function () {
+      // Links like /john/3/?comment=16 open that verse's comments.
+      var v = new URLSearchParams(location.search).get('comment');
+      var el = v && document.getElementById('v' + parseInt(v, 10));
+      if (el) open(el);
+    });
   }
+
+  // Verse pages: copy button
+  document.querySelectorAll('.copy-verse').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var label = btn.textContent;
+      (navigator.clipboard ? navigator.clipboard.writeText(btn.dataset.copy) : Promise.reject()).then(function () {
+        btn.textContent = 'Copied!';
+      }, function () {
+        btn.textContent = 'Copy failed';
+      }).then(function () { setTimeout(function () { btn.textContent = label; }, 1800); });
+    });
+  });
 
   // Library: filter books
   var filter = document.querySelector('.library .filter');
