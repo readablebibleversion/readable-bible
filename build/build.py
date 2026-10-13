@@ -121,6 +121,7 @@ def page(title, body, desc, path, extra_head="", jsonld=None, og_type="website",
   <a class="brand" href="/"><img src="/assets/icon.svg" alt="" width="28" height="28"><span>{SITE_NAME}</span></a>
   <nav>
     <a href="/read/">Read</a>
+    <a href="/topics/">Topics</a>
     <a href="/search/">Search</a>
     <a href="/developers/">Developers</a>
     <a href="/about/">About</a>
@@ -130,7 +131,8 @@ def page(title, body, desc, path, extra_head="", jsonld=None, og_type="website",
 {body}
 <footer class="site-footer">
   <p><strong>{SITE_NAME}</strong> &middot; An open-source Bible translation &middot; {VERSION}</p>
-  <p>Text licensed <a href="{LICENSE_URL}" rel="license">{LICENSE_NAME}</a>. Free to use in your apps, sites, and ministry. <a href="/developers/">Downloads &amp; API</a></p>
+  <p>Text licensed <a href="{LICENSE_URL}" rel="license">{LICENSE_NAME}</a>. Free to use in your apps, sites, and ministry.</p>
+  <p class="footer-links"><a href="/read/">Read</a> <a href="/topics/">Topics</a> <a href="/faq/">FAQ</a> <a href="/developers/">Downloads &amp; API</a> <a href="/about/">About</a></p>
 </footer>
 <script src="/assets/books.js"></script>
 <script src="/assets/app.js"></script>
@@ -157,7 +159,138 @@ def clip(text, n=155):
     return text if len(text) <= n else text[: n - 1].rsplit(" ", 1)[0] + "…"
 
 
-def verse_page(book, ch, v, text, note, prev_v, next_v):
+TOPIC_REF_RE = re.compile(r"^(.+) (\d+):(\d+)(?:-(\d+))?$")
+
+
+def load_topics(books):
+    """Reads build/topics.json and resolves each reference to verses from the translation."""
+    by_ref = {b["ref"]: b for b in books}
+    topics = json.loads((ROOT / "build" / "topics.json").read_text(encoding="utf-8"))
+    for t in topics:
+        t["passages"] = []
+        for ref in t["refs"]:
+            m = TOPIC_REF_RE.match(ref)
+            assert m and m.group(1) in by_ref, f"topic {t['slug']}: bad reference {ref}"
+            b, ch, v1 = by_ref[m.group(1)], int(m.group(2)), int(m.group(3))
+            v2 = int(m.group(4) or v1)
+            verses = [(v, txt) for v, txt, _ in b["chapters"].get(ch, []) if v1 <= v <= v2 and txt]
+            assert verses, f"topic {t['slug']}: no text for {ref}"
+            t["passages"].append({"ref": ref, "book": b, "chapter": ch, "verses": verses})
+    return topics
+
+
+def topic_page(t, all_topics):
+    items = []
+    for p in t["passages"]:
+        b, ch, verses = p["book"], p["chapter"], p["verses"]
+        url = f"/{b['slug']}/{ch}/{verses[0][0]}/"
+        text = " ".join(
+            (f'<sup class="vnum">{v}</sup>' if len(verses) > 1 else "") + esc(txt).replace("\n", " ")
+            for v, txt in verses
+        )
+        items.append(f'<li><a class="topic-ref" href="{url}">{esc(p["ref"])}</a><p>{text}</p></li>')
+    others = "".join(f'<a href="/topics/{o["slug"]}/">{esc(o["name"])}</a>' for o in all_topics if o is not t)
+    title = f"Bible Verses About {t['name']}"
+    body = f"""<main class="topic-page narrow">
+  {crumb_nav(("Topics", "/topics/"), (t['name'], None))}
+  <h1>{esc(title)}</h1>
+  <p class="lede-sm">{esc(t['intro'])}</p>
+  <ol class="topic-list">{''.join(items)}</ol>
+  <p class="verse-cite">All verses from the {SITE_NAME} ({ABBREV}), a free, open-source Bible in clear, simple English.</p>
+  <h2>More topics</h2>
+  <div class="chips">{others}</div>
+</main>"""
+    first = t["passages"][0]
+    desc = clip(f"{len(t['passages'])} Bible verses about {t['name'].lower()} in clear, simple English: "
+                f"{first['ref']}, \"{first['verses'][0][1]}\"")
+    path = f"/topics/{t['slug']}/"
+    return page(f"{title} ({ABBREV}) | {SITE_NAME}", body, desc, path, og_type="article", jsonld=[
+        breadcrumbs(("Topics", "/topics/"), (t["name"], path)),
+        {"@context": "https://schema.org", "@type": "ItemList", "name": title,
+         "numberOfItems": len(t["passages"]),
+         "itemListElement": [
+             {"@type": "ListItem", "position": i + 1, "name": p["ref"],
+              "url": f"{DOMAIN}/{p['book']['slug']}/{p['chapter']}/{p['verses'][0][0]}/"}
+             for i, p in enumerate(t["passages"])
+         ]},
+    ])
+
+
+def topics_index(topics):
+    cards = "".join(
+        f'<a class="topic-card" href="/topics/{t["slug"]}/"><strong>{esc(t["name"])}</strong>'
+        f'<span>{len(t["passages"])} verses</span></a>' for t in topics
+    )
+    body = f"""<main class="library">
+  <div class="page-head">
+    <h1>Bible Verses by Topic</h1>
+    <p>Find verses about fear, anxiety, hope, love, strength, and more, in clear, simple English.</p>
+  </div>
+  <div class="topic-grid">{cards}</div>
+</main>"""
+    return page(f"Bible Verses by Topic | {SITE_NAME} ({ABBREV})", body,
+                f"Bible verses about fear, anxiety, strength, love, hope, peace, healing, and more from the {SITE_NAME} ({ABBREV}).",
+                "/topics/", jsonld=[breadcrumbs(("Topics", "/topics/"))])
+
+
+def faq_page():
+    faqs = json.loads((ROOT / "build" / "faq.json").read_text(encoding="utf-8"))
+    items = "".join(f"<details class=\"faq\"><summary>{esc(f['q'])}</summary><p>{f['a']}</p></details>" for f in faqs)
+    body = f"""<main class="prose narrow">
+  <h1>Frequently Asked Questions</h1>
+  <p>Common questions about the {SITE_NAME} ({ABBREV}).</p>
+  {items}
+</main>"""
+    strip = lambda s: html.unescape(re.sub(r"<[^>]+>", "", s))
+    return page(f"FAQ | {SITE_NAME} ({ABBREV})", body,
+                f"Answers to common questions about the {SITE_NAME} ({ABBREV}): is it free, can I use it in my app, how to cite it, and more.",
+                "/faq/", jsonld=[{
+                    "@context": "https://schema.org", "@type": "FAQPage",
+                    "mainEntity": [{"@type": "Question", "name": f["q"],
+                                    "acceptedAnswer": {"@type": "Answer", "text": strip(f["a"])}} for f in faqs],
+                }])
+
+
+def llms_txt(topics, books):
+    lines = [
+        f"# {SITE_NAME} ({ABBREV})",
+        "",
+        f"> The {SITE_NAME} is a free, open-source Bible translation in clear, simple English, licensed {LICENSE_NAME}. "
+        f"It covers all 66 books. This is a draft translation ({VERSION}).",
+        "",
+        "When quoting this translation, cite the reference with the abbreviation, for example \"John 3:16 (READ)\", "
+        f"and credit it as: \"{ATTRIBUTION}\"",
+        "",
+        "## Reading",
+        f"- [Home]({DOMAIN}/): About the translation",
+        f"- [All books]({DOMAIN}/read/): Index of all 66 books and chapters",
+        f"- [Bible verses by topic]({DOMAIN}/topics/): Verse collections for fear, anxiety, hope, love, and more",
+        f"- [FAQ]({DOMAIN}/faq/): Licensing, citation, and common questions",
+        f"- [About]({DOMAIN}/about/): Purpose and approach of the translation",
+        "",
+        "## URL patterns",
+        f"- Book: {DOMAIN}/{{book}}/ (for example {DOMAIN}/john/)",
+        f"- Chapter: {DOMAIN}/{{book}}/{{chapter}}/ (for example {DOMAIN}/john/3/)",
+        f"- Verse: {DOMAIN}/{{book}}/{{chapter}}/{{verse}}/ (for example {DOMAIN}/john/3/16/)",
+        "- Book slugs are lowercase with dashes: " + ", ".join(b["slug"] for b in books),
+        "",
+        "## Data",
+        f"- [Full text, plain]({DOMAIN}/llms-full.txt): The whole Bible, one verse per line",
+        f"- [JSON API index]({DOMAIN}/api/index.json): Free JSON API, no key required",
+        f"- [Chapter JSON example]({DOMAIN}/api/john/3.json)",
+        f"- [Downloads]({DOMAIN}/developers/): JSON, CSV, USFM, and plain text",
+        "",
+        "## Topics",
+    ] + [f"- [Bible verses about {t['name'].lower()}]({DOMAIN}/topics/{t['slug']}/)" for t in topics] + [
+        "",
+        "## Optional",
+        f"- [Source code and translation data](https://github.com/readablebibleversion/readable-bible)",
+        f"- [License]({LICENSE_URL})",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def verse_page(book, ch, v, text, note, prev_v, next_v, topics=()):
     ref = f"{book['ref']} {ch}:{v}"
     ch_label = f"{book['ref']} {ch}"
     url = f"/{book['slug']}/{ch}/{v}/"
@@ -181,6 +314,7 @@ def verse_page(book, ch, v, text, note, prev_v, next_v):
     <a class="btn" href="/{book['slug']}/{ch}/?comment={v}#v{v}">Comment on this verse</a>
     <button class="btn copy-verse" type="button" data-copy="{esc(text.replace(chr(10), ' '))} ({esc(ref)} {ABBREV})">Copy verse</button>
   </div>
+  {('<p class="verse-topics">Found in: ' + ', '.join(f'<a href="/topics/{t["slug"]}/">Bible verses about {esc(t["name"].lower())}</a>' for t in topics) + '</p>') if topics else ''}
   <section class="context" aria-label="Surrounding verses">
     {ctx(prev_v, "Previous")}
     {ctx(next_v, "Next")}
@@ -413,8 +547,20 @@ def build(xlsx):
             ob, oc, ov, ot, _ = all_verses[k]
             return (f"/{ob['slug']}/{oc}/{ov}/", f"{ob['ref']} {oc}:{ov}", clip(ot, 160))
         return None
+    # Topic collections (/topics/fear/), linked from the verse pages they include.
+    topics = load_topics(books)
+    verse_topics = {}
+    for t in topics:
+        write(f"topics/{t['slug']}/index.html", topic_page(t, topics))
+        for p in t["passages"]:
+            for v, _ in p["verses"]:
+                verse_topics.setdefault((p["book"]["slug"], p["chapter"], v), []).append(t)
+    write("topics/index.html", topics_index(topics))
+    write("faq/index.html", faq_page())
+
     for k, (b, ch, v, t, n) in enumerate(all_verses):
-        write(f"{b['slug']}/{ch}/{v}/index.html", verse_page(b, ch, v, t, n, neighbour(k - 1), neighbour(k + 1)))
+        write(f"{b['slug']}/{ch}/{v}/index.html",
+              verse_page(b, ch, v, t, n, neighbour(k - 1), neighbour(k + 1), verse_topics.get((b["slug"], ch, v), ())))
 
     # Library ("Read") page: every book with every chapter.
     def section(label, group):
@@ -460,7 +606,8 @@ def build(xlsx):
                 .replace("{{PS231}}", verse("Psalms", 23, 1))
                 .replace("{{GEN11}}", verse("Genesis", 1, 1))
                 .replace("{{VERSES}}", f"{total:,}")
-                .replace("{{CHAPTERS}}", f"{len(flat):,}"))
+                .replace("{{CHAPTERS}}", f"{len(flat):,}")
+                .replace("{{TOPICS}}", "".join(f'<a href="/topics/{t["slug"]}/">{esc(t["name"])}</a>' for t in topics)))
     write("index.html", page(f"{SITE_NAME} ({ABBREV}) | A free, open-source Bible in clear English", home,
           f"The {SITE_NAME} ({ABBREV}) is a free, open-source Bible translation written in clear, simple English. "
           f"Read all 66 books online, search every verse, and use it free in your apps.", "/", jsonld=[
@@ -503,7 +650,11 @@ def build(xlsx):
           '<a href="/read/">Browse all books</a> or <a href="/search/">search the Bible</a>.</p></main>',
           "Page not found", "/404.html", noindex=True))
 
-    urls = (["/", "/read/", "/search/", "/about/", "/developers/"]
+    write("llms.txt", llms_txt(topics, books))
+    shutil.copy(SITE / "downloads" / "readable-english-bible.txt", SITE / "llms-full.txt")
+
+    urls = (["/", "/read/", "/search/", "/about/", "/developers/", "/faq/", "/topics/"]
+            + [f"/topics/{t['slug']}/" for t in topics]
             + [f"/{b['slug']}/" for b in books]
             + [f"/{b['slug']}/{c}/" for b, c in flat]
             + [f"/{b['slug']}/{c}/{v}/" for b, c, v, _, _ in all_verses])
