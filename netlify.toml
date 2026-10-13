@@ -5,6 +5,18 @@
 [build.environment]
   PYTHON_VERSION = "3.11"
 
+# Let any app or website fetch the API and downloads.
+[[headers]]
+  for = "/api/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=3600"
+
+[[headers]]
+  for = "/downloads/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+
 [[headers]]
   for = "/assets/*"
   [headers.values]

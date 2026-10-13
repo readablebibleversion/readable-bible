@@ -3,11 +3,14 @@
 Usage:  python build/build.py [path/to/translation.xlsx]   (default: data/translation.xlsx)
 Output: the site/ folder (upload this folder to your host).
 """
+import csv
 import html
+import io
 import json
 import re
 import shutil
 import sys
+import zipfile
 from pathlib import Path
 
 import openpyxl
@@ -18,8 +21,17 @@ STATIC = ROOT / "build" / "static"
 SITE_NAME = "Readable English Bible"
 DOMAIN = "https://readable.bible"
 VERSION = "Draft 0.2"
+LICENSE_NAME = "CC BY 4.0"
+LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
+ATTRIBUTION = f"Scripture from the {SITE_NAME} (readable.bible), licensed under {LICENSE_NAME}."
 OT_COUNT = 39
 REF_RE = re.compile(r"^(.+) (\d+):(\d+)$")
+USFM_CODES = (
+    "GEN EXO LEV NUM DEU JOS JDG RUT 1SA 2SA 1KI 2KI 1CH 2CH EZR NEH EST JOB PSA PRO "
+    "ECC SNG ISA JER LAM EZK DAN HOS JOL AMO OBA JON MIC NAM HAB ZEP HAG ZEC MAL "
+    "MAT MRK LUK JHN ACT ROM 1CO 2CO GAL EPH PHP COL 1TH 2TH 1TI 2TI TIT PHM HEB "
+    "JAS 1PE 2PE 1JN 2JN 3JN JUD REV"
+).split()
 
 
 def slug(name):
@@ -76,6 +88,7 @@ def page(title, body, desc, path, extra_head=""):
   <nav>
     <a href="/read/">Read</a>
     <a href="/search/">Search</a>
+    <a href="/developers/">Developers</a>
     <a href="/about/">About</a>
     <button class="theme-toggle" type="button" aria-label="Toggle dark mode" title="Toggle dark mode">&#9680;</button>
   </nav>
@@ -83,7 +96,7 @@ def page(title, body, desc, path, extra_head=""):
 {body}
 <footer class="site-footer">
   <p><strong>{SITE_NAME}</strong> &middot; An open-source Bible translation &middot; {VERSION}</p>
-  <p>Free to read, copy, share, and build on. <a href="/about/">Learn more</a></p>
+  <p>Text licensed <a href="{LICENSE_URL}" rel="license">{LICENSE_NAME}</a>. Free to use in your apps, sites, and ministry. <a href="/developers/">Downloads &amp; API</a></p>
 </footer>
 <script src="/assets/books.js"></script>
 <script src="/assets/app.js"></script>
@@ -154,6 +167,113 @@ def chapter_page(book, ch, prev_link, next_link):
   {nav}
 </main>"""
     return page(f"{title_ch} | {SITE_NAME}", body, desc, f"/{book['slug']}/{ch}/")
+
+
+def build_open_data(books, flat):
+    """Writes the free downloads (/downloads/) and the static JSON API (/api/). Returns file sizes."""
+    assert len(books) == len(USFM_CODES), "expected 66 books in canonical order"
+    meta = {
+        "name": SITE_NAME,
+        "id": "readable",
+        "language": "en",
+        "version": VERSION,
+        "license": LICENSE_NAME,
+        "license_url": LICENSE_URL,
+        "attribution": ATTRIBUTION,
+        "website": DOMAIN,
+    }
+
+    def verse_obj(v, text, note):
+        obj = {"verse": v, "text": text}
+        if note:
+            obj["note"] = note
+        return obj
+
+    def book_info(i, b):
+        return {
+            "name": b["name"], "slug": b["slug"], "usfm": USFM_CODES[i],
+            "testament": "OT" if i < OT_COUNT else "NT", "chapters": len(b["chapters"]),
+        }
+
+    # Full Bible as one JSON file.
+    full = dict(meta, books=[
+        dict(book_info(i, b), chapters=[
+            {"chapter": ch, "verses": [verse_obj(*v) for v in b["chapters"][ch]]}
+            for ch in sorted(b["chapters"])
+        ]) for i, b in enumerate(books)
+    ])
+    write("downloads/readable-english-bible.json", json.dumps(full, ensure_ascii=False, separators=(",", ":")))
+
+    # CSV and plain text: one verse per row/line.
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(["book", "usfm", "chapter", "verse", "text", "note"])
+    lines = [f"{SITE_NAME} ({VERSION}). {ATTRIBUTION}", ""]
+    for i, b in enumerate(books):
+        for ch in sorted(b["chapters"]):
+            for v, text, note in b["chapters"][ch]:
+                w.writerow([b["name"], USFM_CODES[i], ch, v, text, note])
+                if text:
+                    lines.append(f"{b['ref']} {ch}:{v}\t{text.replace(chr(10), ' ')}")
+    write("downloads/readable-english-bible.csv", buf.getvalue())
+    write("downloads/readable-english-bible.txt", "\n".join(lines) + "\n")
+
+    # USFM: one file per book, zipped.
+    usfm_zip = SITE / "downloads" / "readable-english-bible-usfm.zip"
+    with zipfile.ZipFile(usfm_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        for i, b in enumerate(books):
+            code = USFM_CODES[i]
+            out = [f"\\id {code} {SITE_NAME} ({VERSION}) - {LICENSE_NAME}", "\\usfm 3.0", "\\ide UTF-8",
+                   f"\\h {b['name']}", f"\\toc1 {b['name']}", f"\\toc2 {b['name']}", f"\\toc3 {code.title()}",
+                   f"\\mt1 {b['name']}"]
+            for ch in sorted(b["chapters"]):
+                out += [f"\\c {ch}", "\\p"]
+                for v, text, note in b["chapters"][ch]:
+                    fn = f" \\f + \\fr {ch}:{v} \\ft {note}\\f*" if note else ""
+                    parts = text.split("\n") if text else [""]
+                    if len(parts) > 1:
+                        out.append(f"\\q1 \\v {v} {parts[0]}")
+                        out += [f"\\q1 {p}" for p in parts[1:]]
+                        out[-1] += fn
+                    else:
+                        out.append(f"\\v {v} {parts[0]}{fn}".rstrip())
+            z.writestr(f"{i + 1:02d}-{code}.usfm", "\n".join(out) + "\n")
+        z.writestr("LICENSE.txt", f"{ATTRIBUTION}\n{LICENSE_URL}\n")
+
+    # Static JSON API.
+    infos = [book_info(i, b) for i, b in enumerate(books)]
+    write("api/index.json", json.dumps(dict(meta, endpoints={
+        "books": f"{DOMAIN}/api/books.json",
+        "book": f"{DOMAIN}/api/{{book}}.json",
+        "chapter": f"{DOMAIN}/api/{{book}}/{{chapter}}.json",
+    }), indent=2))
+    write("api/books.json", json.dumps(dict(meta, books=[
+        dict(info, url=f"{DOMAIN}/api/{info['slug']}.json") for info in infos
+    ]), ensure_ascii=False, indent=1))
+    for i, b in enumerate(books):
+        write(f"api/{b['slug']}.json", json.dumps(dict(meta, book=full["books"][i]), ensure_ascii=False, separators=(",", ":")))
+    for j, (b, ch) in enumerate(flat):
+        i = books.index(b)
+        def ref(k):
+            if 0 <= k < len(flat):
+                ob, oc = flat[k]
+                return {"book": ob["slug"], "chapter": oc, "url": f"{DOMAIN}/api/{ob['slug']}/{oc}.json"}
+            return None
+        write(f"api/{b['slug']}/{ch}.json", json.dumps(dict(
+            meta, book=infos[i], chapter=ch,
+            verses=[verse_obj(*v) for v in b["chapters"][ch]],
+            previous=ref(j - 1), next=ref(j + 1),
+        ), ensure_ascii=False, separators=(",", ":")))
+
+    def size(path):
+        n = (SITE / path).stat().st_size
+        return f"{n / 1_000_000:.1f} MB" if n >= 1_000_000 else f"{n // 1000} KB"
+    return {
+        "json": size("downloads/readable-english-bible.json"),
+        "csv": size("downloads/readable-english-bible.csv"),
+        "txt": size("downloads/readable-english-bible.txt"),
+        "usfm": size("downloads/readable-english-bible-usfm.zip"),
+    }
 
 
 def build(xlsx):
@@ -230,9 +350,15 @@ def build(xlsx):
     write("index.html", page(f"{SITE_NAME} | A free, open-source Bible in clear English", home,
           f"The {SITE_NAME} is a free, open-source Bible translation written in clear, simple English that anyone can read.", "/"))
 
-    for name in ("about", "search"):
+    sizes = build_open_data(books, flat)
+
+    for name in ("about", "search", "developers"):
         body = (ROOT / "build" / "templates" / f"{name}.html").read_text(encoding="utf-8")
-        title = {"about": "About", "search": "Search"}[name]
+        body = (body.replace("{{LICENSE_NAME}}", LICENSE_NAME).replace("{{LICENSE_URL}}", LICENSE_URL)
+                    .replace("{{ATTRIBUTION}}", esc(ATTRIBUTION)).replace("{{VERSION}}", VERSION))
+        for key, size in sizes.items():
+            body = body.replace("{{SIZE:" + key + "}}", size)
+        title = {"about": "About", "search": "Search", "developers": "Downloads & API"}[name]
         write(f"{name}/index.html", page(f"{title} | {SITE_NAME}", body,
               f"{title} - {SITE_NAME}, an open-source Bible translation.", f"/{name}/"))
 
@@ -241,7 +367,7 @@ def build(xlsx):
           '<a href="/read/">Browse all books</a> or <a href="/search/">search the Bible</a>.</p></main>',
           "Page not found", "/404.html"))
 
-    urls = ["/", "/read/", "/search/", "/about/"] + [f"/{b['slug']}/{c}/" for b, c in flat]
+    urls = ["/", "/read/", "/search/", "/about/", "/developers/"] + [f"/{b['slug']}/{c}/" for b, c in flat]
     write("sitemap.xml", '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
           + "".join(f"<url><loc>{DOMAIN}{u}</loc></url>\n" for u in urls) + "</urlset>\n")
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {DOMAIN}/sitemap.xml\n")
