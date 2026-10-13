@@ -46,7 +46,12 @@ img { display: block; }
 .theme-toggle { border: 1px solid var(--line); background: var(--surface); color: var(--text); border-radius: 8px; width: 34px; height: 34px; cursor: pointer; font-size: 1rem; }
 @media (max-width: 560px) {
   .brand span { font-size: .95rem; }
-  .site-header nav a[href="/about/"] { display: none; }
+  .site-header nav a[href="/about/"], .site-header nav a[href="/developers/"] { display: none; }
+  .brand { min-width: 0; line-height: 1.2; }
+  .site-header nav a { padding: 6px 7px; }
+}
+@media (max-width: 340px) {
+  .brand span { display: none; }
 }
 
 .site-footer { border-top: 1px solid var(--line); margin-top: 64px; padding: 28px 16px 40px; text-align: center; color: var(--muted); font-size: .9rem; }
@@ -137,3 +142,15 @@ img { display: block; }
 .prose h1 { font-family: var(--serif); font-size: clamp(1.9rem, 5vw, 2.5rem); line-height: 1.2; }
 .prose h2 { font-family: var(--serif); margin-top: 32px; }
 .prose p { font-size: 1.05rem; }
+.prose h3 { margin-top: 24px; }
+.dev pre { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; overflow-x: auto; font-size: .85rem; line-height: 1.5; }
+.dev pre.attribution { white-space: pre-wrap; }
+.dev code { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+.downloads { list-style: none; padding: 0; display: grid; gap: 10px; }
+.downloads a { display: flex; flex-direction: column; padding: 14px 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-decoration: none; }
+.downloads a:hover { border-color: var(--accent); }
+.downloads span { color: var(--muted); font-size: .9rem; }
+.endpoints { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.endpoints td { padding: 10px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.endpoints td:first-child { white-space: nowrap; }
+@media (max-width: 560px) { .endpoints td:first-child { white-space: normal; word-break: break-all; } }

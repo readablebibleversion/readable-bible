@@ -1,0 +1,48 @@
+<main class="prose narrow dev">
+  <h1>Downloads &amp; API</h1>
+  <p>The Readable English Bible is free to use in your apps, websites, churches, schools, and ministries, including commercial products. No sign-up, no API key, no fees.</p>
+
+  <h2>License</h2>
+  <p>The translation text is licensed under <a href="{{LICENSE_URL}}" rel="license">Creative Commons Attribution 4.0 ({{LICENSE_NAME}})</a>. You may copy, share, adapt, and use it for any purpose, as long as you give credit. Please include this line wherever the text is shown:</p>
+  <pre class="attribution"><code>{{ATTRIBUTION}}</code></pre>
+  <p>This is a draft translation ({{VERSION}}) and the text may still change.</p>
+
+  <h2>Download the full Bible</h2>
+  <ul class="downloads">
+    <li><a href="/downloads/readable-english-bible.json" download><strong>JSON</strong><span>Books, chapters, verses, and notes &middot; {{SIZE:json}}</span></a></li>
+    <li><a href="/downloads/readable-english-bible.csv" download><strong>CSV</strong><span>One verse per row, opens in any spreadsheet &middot; {{SIZE:csv}}</span></a></li>
+    <li><a href="/downloads/readable-english-bible-usfm.zip" download><strong>USFM</strong><span>Standard Bible software format, one file per book &middot; {{SIZE:usfm}}</span></a></li>
+    <li><a href="/downloads/readable-english-bible.txt" download><strong>Plain text</strong><span>One verse per line &middot; {{SIZE:txt}}</span></a></li>
+  </ul>
+
+  <h2>JSON API</h2>
+  <p>Every book and chapter is available as a JSON file you can fetch straight from your app. Cross-origin requests are allowed.</p>
+  <table class="endpoints">
+    <tr><td><code>GET /api/books.json</code></td><td>List of all 66 books</td></tr>
+    <tr><td><code>GET /api/{book}.json</code></td><td>A whole book, e.g. <a href="/api/ruth.json"><code>/api/ruth.json</code></a></td></tr>
+    <tr><td><code>GET /api/{book}/{chapter}.json</code></td><td>One chapter, e.g. <a href="/api/john/3.json"><code>/api/john/3.json</code></a></td></tr>
+  </table>
+  <p>Book slugs are lowercase with dashes: <code>genesis</code>, <code>1-samuel</code>, <code>psalms</code>, <code>song-of-solomon</code>, <code>1-john</code>. Each book also has its standard USFM code (<code>GEN</code>, <code>PSA</code>, <code>JHN</code>&hellip;).</p>
+
+  <h3>Example</h3>
+  <pre><code>const res = await fetch("https://readable.bible/api/john/3.json");
+const chapter = await res.json();
+const verse = chapter.verses.find(v =&gt; v.verse === 16);
+console.log(verse.text);</code></pre>
+  <p>A chapter looks like this (shortened):</p>
+  <pre><code>{
+  "name": "Readable English Bible",
+  "license": "{{LICENSE_NAME}}",
+  "book": { "name": "John", "slug": "john", "usfm": "JHN", "testament": "NT", "chapters": 21 },
+  "chapter": 3,
+  "verses": [
+    { "verse": 16, "text": "For God so loved the world&hellip;" }
+  ],
+  "previous": { "book": "john", "chapter": 2, "url": "&hellip;" },
+  "next": { "book": "john", "chapter": 4, "url": "&hellip;" }
+}</code></pre>
+  <p>Verses with a translator note include a <code>"note"</code> field. Lines of poetry are separated by <code>\n</code>.</p>
+
+  <h2>Source</h2>
+  <p>The translation and the code for this website are open on <a href="https://github.com/readablebibleversion/readable-bible">GitHub</a>.</p>
+</main>
