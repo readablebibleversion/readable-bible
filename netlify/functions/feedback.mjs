@@ -6,6 +6,7 @@
 //   POST /feedback { action: "delete", book, chapter, id, token }   (token = ADMIN_TOKEN env var)
 import { getStore } from "@netlify/blobs";
 import { createHash, randomUUID } from "node:crypto";
+import { isAllowed } from "../lib/moderation.mjs";
 
 const MAX_TEXT = 1000;
 const RATE_LIMIT = 5; // comments per IP per window
@@ -38,7 +39,8 @@ const hashIp = (ip) => createHash("sha256").update(`readable-bible:${ip || "unkn
 async function listComments(s, book, chapter) {
   const { blobs } = await s.comments.list({ prefix: `${book}/${chapter}/` });
   const items = await Promise.all(blobs.map((b) => s.comments.get(b.key, { type: "json" })));
-  return items.filter((c) => c && !c.hidden).map(({ id, verse, text, votes, created }) => ({ id, verse, text, votes, created }));
+  // Re-check on read, so comments posted before a word was added to the list get hidden too.
+  return items.filter((c) => c && !c.hidden && isAllowed(c.text)).map(({ id, verse, text, votes, created }) => ({ id, verse, text, votes, created }));
 }
 
 async function allowComment(s, ip) {
@@ -78,6 +80,9 @@ export default async (req, context) => {
     if (body.website) return json({ ok: true }); // honeypot field filled in: silently drop bots
     if (!validPlace(book, chapter, verse)) return json({ error: "Invalid verse." }, 400);
     if (text.length < 2 || text.length > MAX_TEXT) return json({ error: `Comments must be 2 to ${MAX_TEXT} characters.` }, 400);
+    if (!isAllowed(text)) {
+      return json({ error: "Your comment wasn't posted because it contains language that isn't allowed here. Please keep comments respectful and about the verse." }, 422);
+    }
     if (!(await allowComment(s, context.ip))) return json({ error: "You're posting too fast. Please wait a few minutes." }, 429);
     const comment = { id: randomUUID(), book, chapter, verse, text, votes: 0, created: new Date().toISOString() };
     await s.comments.setJSON(`${book}/${chapter}/${comment.id}`, comment);
