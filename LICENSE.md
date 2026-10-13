@@ -8,7 +8,7 @@ https://creativecommons.org/licenses/by/4.0/
 
 You are free to share, copy, adapt, and use the text for any purpose, including commercially, as long as you give appropriate credit. Suggested attribution:
 
-> Scripture from the Readable English Bible (readable.bible), licensed under CC BY 4.0.
+> Scripture from the Readable English Bible (READ), readable.bible, licensed under CC BY 4.0.
 
 ## Website code
 
