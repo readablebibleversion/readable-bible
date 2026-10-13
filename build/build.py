@@ -162,6 +162,7 @@ def chapter_page(book, ch, prev_link, next_link):
   </div>
   <article class="chapter">
     <h1><span class="book-name">{esc(book['name'])}</span>{f'<span class="ch-num">Chapter {ch}</span>' if n_ch > 1 else ''}</h1>
+    <p class="comment-hint">Tap any verse to comment or suggest a better wording.</p>
     <p class="text{' poetry' if poetic else ''}">{''.join(parts)}</p>
     {fn}
   </article>

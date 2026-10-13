@@ -42,11 +42,160 @@
       });
     });
 
+    setupComments(reader);
+
     document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && document.querySelector('.cp.open')) return;
       if (e.target.closest('input, select, textarea') || e.altKey || e.ctrlKey || e.metaKey) return;
       var link = e.key === 'ArrowLeft' ? reader.querySelector('a.prev') : e.key === 'ArrowRight' ? reader.querySelector('a.next') : null;
       if (link) location.href = link.href;
     });
+  }
+
+  // Verse comments: click a verse to read, post, and upvote anonymous comments.
+  function setupComments(reader) {
+    var book = reader.dataset.book, chapter = +reader.dataset.chapter;
+    var bookName = reader.querySelector('.book-name').textContent;
+    var comments = [], loaded = false, current = null;
+
+    function session(key, fallback) {
+      try { var v = sessionStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch (e) { return fallback; }
+    }
+    function saveSession(key, v) { try { sessionStorage.setItem(key, JSON.stringify(v)); } catch (e) {} }
+    var sessionId = session('sessionId', null);
+    if (!sessionId) {
+      sessionId = crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, function () { return (Math.random() * 16 | 0).toString(16); });
+      saveSession('sessionId', sessionId);
+    }
+    var voted = session('voted', []);
+
+    function esc(s) { return s.replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+    function ago(iso) {
+      var s = (Date.now() - new Date(iso)) / 1000;
+      if (s < 60) return 'just now';
+      var units = [[31536000, 'year'], [2592000, 'month'], [86400, 'day'], [3600, 'hour'], [60, 'minute']];
+      for (var i = 0; i < units.length; i++) {
+        var n = Math.floor(s / units[i][0]);
+        if (n >= 1) return n + ' ' + units[i][1] + (n > 1 ? 's' : '') + ' ago';
+      }
+    }
+    function api(body) {
+      return fetch('/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || 'Something went wrong.'); return d; }); });
+    }
+
+    var panel = document.createElement('aside');
+    panel.className = 'cp';
+    panel.setAttribute('aria-label', 'Verse comments');
+    panel.hidden = true;
+    panel.innerHTML =
+      '<div class="cp-head"><h2></h2><button type="button" class="cp-close" aria-label="Close">&times;</button></div>' +
+      '<div class="cp-body"><blockquote class="cp-verse"></blockquote><p class="cp-status"></p><ol class="cp-list"></ol></div>' +
+      '<form class="cp-form"><label class="hp">Leave this empty <input name="website" tabindex="-1" autocomplete="off"></label>' +
+      '<textarea maxlength="1000" placeholder="Share a comment, question, or a clearer way to say this verse..." aria-label="Your comment" required></textarea>' +
+      '<div class="row"><span>Posted anonymously</span><button type="submit">Post</button></div><p class="cp-error" role="alert"></p></form>';
+    document.body.appendChild(panel);
+    var list = panel.querySelector('.cp-list'), status = panel.querySelector('.cp-status');
+    var form = panel.querySelector('form'), textarea = form.querySelector('textarea'), error = panel.querySelector('.cp-error');
+
+    function updateBadges() {
+      reader.querySelectorAll('.cbadge').forEach(function (b) { b.remove(); });
+      var counts = {};
+      comments.forEach(function (c) { counts[c.verse] = (counts[c.verse] || 0) + 1; });
+      Object.keys(counts).forEach(function (v) {
+        var el = document.getElementById('v' + v);
+        if (!el) return;
+        var b = document.createElement('span');
+        b.className = 'cbadge';
+        b.title = counts[v] + ' comment' + (counts[v] > 1 ? 's' : '');
+        b.textContent = '\u{1F4AC} ' + counts[v];
+        el.appendChild(b);
+      });
+    }
+
+    function renderList() {
+      if (current === null) return;
+      if (!loaded) { status.textContent = 'Loading comments...'; list.innerHTML = ''; return; }
+      var mine = comments.filter(function (c) { return c.verse === current; })
+        .sort(function (a, b) { return b.votes - a.votes || (b.created > a.created ? 1 : -1); });
+      status.textContent = mine.length ? '' : 'No comments yet. Be the first to share a thought on this verse.';
+      list.innerHTML = mine.map(function (c) {
+        var has = voted.indexOf(c.id) !== -1;
+        return '<li><button type="button" class="cp-vote' + (has ? ' voted' : '') + '" data-id="' + c.id + '"' + (has ? ' disabled aria-pressed="true"' : '') +
+          ' aria-label="Upvote"><span class="arrow">&#9650;</span>' + c.votes + '</button>' +
+          '<div><p class="cp-text">' + esc(c.text) + '</p><div class="cp-meta">Anonymous &middot; ' + ago(c.created) + '</div></div></li>';
+      }).join('');
+    }
+
+    function load() {
+      return fetch('/feedback?book=' + encodeURIComponent(book) + '&chapter=' + chapter)
+        .then(function (r) { if (!r.ok) throw new Error(); return r.json(); })
+        .then(function (d) { comments = d.comments || []; loaded = true; updateBadges(); renderList(); })
+        .catch(function () { loaded = true; comments = []; status.textContent = 'Comments are unavailable right now.'; list.innerHTML = ''; });
+    }
+
+    function open(verseEl) {
+      var v = +verseEl.id.slice(1);
+      current = v;
+      reader.querySelectorAll('.verse.selected').forEach(function (el) { el.classList.remove('selected'); });
+      verseEl.classList.add('selected');
+      var clone = verseEl.cloneNode(true);
+      clone.querySelectorAll('.vnum, .fn-ref, .cbadge').forEach(function (n) { n.remove(); });
+      clone.querySelectorAll('br').forEach(function (n) { n.replaceWith('\n'); });
+      panel.querySelector('h2').textContent = bookName + ' ' + chapter + ':' + v;
+      panel.querySelector('.cp-verse').textContent = clone.textContent.trim();
+      error.textContent = '';
+      panel.hidden = false;
+      requestAnimationFrame(function () { panel.classList.add('open'); });
+      renderList();
+    }
+    function close() {
+      panel.classList.remove('open');
+      reader.querySelectorAll('.verse.selected').forEach(function (el) { el.classList.remove('selected'); });
+      current = null;
+      setTimeout(function () { if (!panel.classList.contains('open')) panel.hidden = true; }, 250);
+    }
+
+    reader.querySelector('.text').addEventListener('click', function (e) {
+      if (e.target.closest('a')) return;
+      var verseEl = e.target.closest('.verse');
+      if (verseEl && !(window.getSelection && String(window.getSelection()).length)) open(verseEl);
+    });
+    panel.querySelector('.cp-close').addEventListener('click', close);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && panel.classList.contains('open')) close(); });
+
+    list.addEventListener('click', function (e) {
+      var btn = e.target.closest('.cp-vote');
+      if (!btn || btn.disabled) return;
+      var id = btn.dataset.id;
+      btn.disabled = true;
+      api({ action: 'vote', book: book, chapter: chapter, id: id, session: sessionId }).then(function (d) {
+        comments.forEach(function (c) { if (c.id === id) c.votes = d.votes; });
+        voted.push(id);
+        saveSession('voted', voted);
+        renderList();
+      }).catch(function () { btn.disabled = false; });
+    });
+
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var text = textarea.value.trim();
+      if (text.length < 2) { error.textContent = 'Please write a little more.'; return; }
+      var btn = form.querySelector('button');
+      btn.disabled = true;
+      error.textContent = '';
+      api({ action: 'comment', book: book, chapter: chapter, verse: current, text: text, website: form.website.value })
+        .then(function (d) {
+          if (d.comment) comments.push(d.comment);
+          textarea.value = '';
+          updateBadges();
+          renderList();
+        })
+        .catch(function (err) { error.textContent = err.message; })
+        .then(function () { btn.disabled = false; });
+    });
+
+    load();
   }
 
   // Library: filter books
