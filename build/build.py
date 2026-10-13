@@ -19,11 +19,12 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "site"
 STATIC = ROOT / "build" / "static"
 SITE_NAME = "Readable English Bible"
+ABBREV = "READ"
 DOMAIN = "https://readable.bible"
 VERSION = "Draft 0.2"
 LICENSE_NAME = "CC BY 4.0"
 LICENSE_URL = "https://creativecommons.org/licenses/by/4.0/"
-ATTRIBUTION = f"Scripture from the {SITE_NAME} (readable.bible), licensed under {LICENSE_NAME}."
+ATTRIBUTION = f"Scripture from the {SITE_NAME} ({ABBREV}), readable.bible, licensed under {LICENSE_NAME}."
 OT_COUNT = 39
 REF_RE = re.compile(r"^(.+) (\d+):(\d+)$")
 USFM_CODES = (
@@ -174,6 +175,7 @@ def build_open_data(books, flat):
     assert len(books) == len(USFM_CODES), "expected 66 books in canonical order"
     meta = {
         "name": SITE_NAME,
+        "abbreviation": ABBREV,
         "id": "readable",
         "language": "en",
         "version": VERSION,
@@ -223,7 +225,7 @@ def build_open_data(books, flat):
     with zipfile.ZipFile(usfm_zip, "w", zipfile.ZIP_DEFLATED) as z:
         for i, b in enumerate(books):
             code = USFM_CODES[i]
-            out = [f"\\id {code} {SITE_NAME} ({VERSION}) - {LICENSE_NAME}", "\\usfm 3.0", "\\ide UTF-8",
+            out = [f"\\id {code} {SITE_NAME} ({ABBREV}, {VERSION}) - {LICENSE_NAME}", "\\usfm 3.0", "\\ide UTF-8",
                    f"\\h {b['name']}", f"\\toc1 {b['name']}", f"\\toc2 {b['name']}", f"\\toc3 {code.title()}",
                    f"\\mt1 {b['name']}"]
             for ch in sorted(b["chapters"]):
@@ -355,7 +357,8 @@ def build(xlsx):
     for name in ("about", "search", "developers"):
         body = (ROOT / "build" / "templates" / f"{name}.html").read_text(encoding="utf-8")
         body = (body.replace("{{LICENSE_NAME}}", LICENSE_NAME).replace("{{LICENSE_URL}}", LICENSE_URL)
-                    .replace("{{ATTRIBUTION}}", esc(ATTRIBUTION)).replace("{{VERSION}}", VERSION))
+                    .replace("{{ATTRIBUTION}}", esc(ATTRIBUTION)).replace("{{VERSION}}", VERSION)
+                    .replace("{{ABBREV}}", ABBREV))
         for key, size in sizes.items():
             body = body.replace("{{SIZE:" + key + "}}", size)
         title = {"about": "About", "search": "Search", "developers": "Downloads & API"}[name]
