@@ -63,7 +63,31 @@ def load(xlsx):
     return books
 
 
-def page(title, body, desc, path, extra_head=""):
+def ld(obj):
+    """Structured data (JSON-LD) for search engines."""
+    return '<script type="application/ld+json">' + json.dumps(obj, ensure_ascii=False).replace("</", "<\\/") + "</script>\n"
+
+
+def breadcrumbs(*items):
+    """items: (name, path) pairs, starting after Home."""
+    trail = [("Home", "/")] + list(items)
+    return {
+        "@context": "https://schema.org", "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": i + 1, "name": name, "item": DOMAIN + path}
+            for i, (name, path) in enumerate(trail)
+        ],
+    }
+
+
+def crumb_nav(*items):
+    links = ['<a href="/">Home</a>'] + [
+        f'<a href="{p}">{esc(n)}</a>' if p else f'<span aria-current="page">{esc(n)}</span>' for n, p in items
+    ]
+    return '<nav class="crumbs" aria-label="Breadcrumb">' + ' <span aria-hidden="true">&rsaquo;</span> '.join(links) + "</nav>"
+
+
+def page(title, body, desc, path, extra_head="", jsonld=None, og_type="website", noindex=False):
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -71,10 +95,19 @@ def page(title, body, desc, path, extra_head=""):
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{esc(title)}</title>
 <meta name="description" content="{esc(desc)}">
-<link rel="canonical" href="{DOMAIN}{path}">
+{'<meta name="robots" content="noindex">' if noindex else f'<link rel="canonical" href="{DOMAIN}{path}">'}
+<meta name="theme-color" content="#7a3e1d">
+<meta property="og:site_name" content="{SITE_NAME}">
 <meta property="og:title" content="{esc(title)}">
 <meta property="og:description" content="{esc(desc)}">
-<meta property="og:type" content="website">
+<meta property="og:type" content="{og_type}">
+<meta property="og:url" content="{DOMAIN}{path}">
+<meta property="og:image" content="{DOMAIN}/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
+{''.join(ld(x) for x in (jsonld or []))}
 <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -112,10 +145,75 @@ def write(rel, content):
     out.write_text(content, encoding="utf-8")
 
 
-def verse_html(v, text, marker):
+def verse_html(v, text, marker, verse_url):
     sup = f'<a class="fn-ref" href="#fn-{marker}" id="fr-{marker}">{marker}</a>' if marker else ""
     body = esc(text).replace("\n", "<br>") if text else '<span class="omitted">&mdash;</span>'
-    return f'<span class="verse" id="v{v}"><sup class="vnum">{v}</sup>{body}{sup}</span> '
+    num = f'<a href="{verse_url}" title="Open this verse">{v}</a>' if text else str(v)
+    return f'<span class="verse" id="v{v}"><sup class="vnum">{num}</sup>{body}{sup}</span> '
+
+
+def clip(text, n=155):
+    text = " ".join(text.split())
+    return text if len(text) <= n else text[: n - 1].rsplit(" ", 1)[0] + "…"
+
+
+def verse_page(book, ch, v, text, note, prev_v, next_v):
+    ref = f"{book['ref']} {ch}:{v}"
+    ch_label = f"{book['ref']} {ch}"
+    url = f"/{book['slug']}/{ch}/{v}/"
+
+    def ctx(item, label):
+        if not item:
+            return ""
+        pv, pt, ptext = item
+        return (f'<a class="ctx" href="{pv}"><span class="ref">{label} &middot; {esc(pt)}</span>'
+                f'<span>{esc(ptext)}</span></a>')
+
+    note_html = f'<p class="verse-note"><strong>Note:</strong> {esc(note)}</p>' if note else ""
+    body = f"""<main class="verse-page narrow">
+  {crumb_nav((book['name'], f"/{book['slug']}/"), (ch_label, f"/{book['slug']}/{ch}/"), (f"Verse {v}", None))}
+  <h1>{esc(ref)}</h1>
+  <blockquote class="verse-big">{esc(text).replace(chr(10), '<br>')}</blockquote>
+  <p class="verse-cite">{esc(ref)}, {SITE_NAME} ({ABBREV})</p>
+  {note_html}
+  <div class="verse-actions">
+    <a class="btn primary" href="/{book['slug']}/{ch}/#v{v}">Read all of {esc(ch_label)}</a>
+    <a class="btn" href="/{book['slug']}/{ch}/?comment={v}#v{v}">Comment on this verse</a>
+    <button class="btn copy-verse" type="button" data-copy="{esc(text.replace(chr(10), ' '))} ({esc(ref)} {ABBREV})">Copy verse</button>
+  </div>
+  <section class="context" aria-label="Surrounding verses">
+    {ctx(prev_v, "Previous")}
+    {ctx(next_v, "Next")}
+  </section>
+</main>"""
+    desc = clip(f"{ref} ({ABBREV}): {text}")
+    return page(f"{ref} | {SITE_NAME} ({ABBREV})", body, desc, url, og_type="article", jsonld=[
+        breadcrumbs((book["name"], f"/{book['slug']}/"), (ch_label, f"/{book['slug']}/{ch}/"), (ref, url)),
+    ])
+
+
+def book_page(i, book, prev_b, next_b):
+    n_ch = len(book["chapters"])
+    first = next((t for _, t, _ in book["chapters"][1] if t), "")
+    testament = "Old Testament" if i < OT_COUNT else "New Testament"
+    chs = "".join(f'<a href="/{book["slug"]}/{c}/">{c}</a>' for c in sorted(book["chapters"]))
+    nav = '<nav class="chapter-nav">' + (
+        f'<a class="prev" href="/{prev_b["slug"]}/">&larr; {esc(prev_b["name"])}</a>' if prev_b else '<span></span>') + (
+        f'<a class="next" href="/{next_b["slug"]}/">{esc(next_b["name"])} &rarr;</a>' if next_b else '<span></span>') + "</nav>"
+    body = f"""<main class="book-page narrow">
+  {crumb_nav((book['name'], None))}
+  <h1>The Book of {esc(book['name'])}</h1>
+  <p class="book-meta">{testament} &middot; {n_ch} chapter{'s' if n_ch > 1 else ''} &middot; {SITE_NAME} ({ABBREV})</p>
+  <blockquote class="book-opening"><p>{esc(first)}</p><cite><a href="/{book['slug']}/1/#v1">{esc(book['ref'])} 1:1</a></cite></blockquote>
+  <h2>Chapters</h2>
+  <div class="ch-grid big">{chs}</div>
+  <p><a class="btn primary" href="/{book['slug']}/1/">Start reading {esc(book['name'])}</a></p>
+  {nav}
+</main>"""
+    desc = clip(f"Read the Book of {book['name']} ({n_ch} chapters) in the {SITE_NAME}, a free, open-source "
+                f"Bible in clear, simple English. {first}")
+    return page(f"The Book of {book['name']} | {SITE_NAME} ({ABBREV})", body, desc, f"/{book['slug']}/",
+                jsonld=[breadcrumbs((book["name"], f"/{book['slug']}/"))])
 
 
 def chapter_page(book, ch, prev_link, next_link):
@@ -127,7 +225,7 @@ def chapter_page(book, ch, prev_link, next_link):
         if note:
             marker = chr(ord("a") + len(notes) % 26) + ("" if len(notes) < 26 else str(len(notes) // 26))
             notes.append((marker, v, note))
-        parts.append(verse_html(v, text, marker))
+        parts.append(verse_html(v, text, marker, f"/{book['slug']}/{ch}/{v}/"))
     fn = ""
     if notes:
         items = "".join(
@@ -146,9 +244,10 @@ def chapter_page(book, ch, prev_link, next_link):
     # Chapters written mostly as poetry lines get one verse per block.
     poetic = sum("\n" in t for _, t, _ in verses) * 2 > len(verses)
     n_ch = len(book["chapters"])
-    title_ch = f"{book['name']} {ch}" if n_ch > 1 else book["name"]
-    first = verses[0][1] or (verses[1][1] if len(verses) > 1 else "")
-    desc = f"{title_ch} in the {SITE_NAME}, a free, open-source translation in clear, simple English. {first[:120]}"
+    # Titles use the common search form ("Psalm 23", "John 3").
+    title_ch = f"{book['ref']} {ch}" if n_ch > 1 else book["name"]
+    first = next((t for _, t, _ in verses if t), "")
+    desc = clip(f"Read {title_ch} in the {SITE_NAME} ({ABBREV}), a free, open-source Bible in clear, simple English. {first}")
     body = f"""<main class="reader" data-book="{book['slug']}" data-chapter="{ch}">
   <div class="reader-bar">
     <div class="jump">
@@ -161,14 +260,17 @@ def chapter_page(book, ch, prev_link, next_link):
     </div>
   </div>
   <article class="chapter">
-    <h1><span class="book-name">{esc(book['name'])}</span>{f'<span class="ch-num">Chapter {ch}</span>' if n_ch > 1 else ''}</h1>
+    <h1><a class="book-name" href="/{book['slug']}/">{esc(book['name'])}</a>{f'<span class="ch-num">Chapter {ch}</span>' if n_ch > 1 else ''}</h1>
     <p class="comment-hint">Tap any verse to comment or suggest a better wording.</p>
     <p class="text{' poetry' if poetic else ''}">{''.join(parts)}</p>
     {fn}
   </article>
   {nav}
 </main>"""
-    return page(f"{title_ch} | {SITE_NAME}", body, desc, f"/{book['slug']}/{ch}/")
+    path = f"/{book['slug']}/{ch}/"
+    return page(f"{title_ch} | {SITE_NAME} ({ABBREV})", body, desc, path, og_type="article", jsonld=[
+        breadcrumbs((book["name"], f"/{book['slug']}/"), (title_ch, path)),
+    ])
 
 
 def build_open_data(books, flat):
@@ -299,12 +401,20 @@ def build(xlsx):
                 return (f"/{ob['slug']}/{oc}/", label)
             return None
         write(f"{b['slug']}/{ch}/index.html", chapter_page(b, ch, link(i - 1), link(i + 1)))
-        if ch == 1:
-            # /john/ redirects to /john/1/
-            write(f"{b['slug']}/index.html",
-                  f'<!doctype html><meta charset="utf-8"><title>{esc(b["name"])}</title>'
-                  f'<link rel="canonical" href="{DOMAIN}/{b["slug"]}/1/">'
-                  f'<meta http-equiv="refresh" content="0; url=/{b["slug"]}/1/">')
+
+    # Book overview pages (/john/).
+    for i, b in enumerate(books):
+        write(f"{b['slug']}/index.html", book_page(i, b, books[i - 1] if i else None, books[i + 1] if i + 1 < len(books) else None))
+
+    # A page for every verse (/john/3/16/): what people search for most.
+    all_verses = [(b, ch, v, t, n) for b, ch in flat for v, t, n in b["chapters"][ch] if t]
+    def neighbour(k):
+        if 0 <= k < len(all_verses):
+            ob, oc, ov, ot, _ = all_verses[k]
+            return (f"/{ob['slug']}/{oc}/{ov}/", f"{ob['ref']} {oc}:{ov}", clip(ot, 160))
+        return None
+    for k, (b, ch, v, t, n) in enumerate(all_verses):
+        write(f"{b['slug']}/{ch}/{v}/index.html", verse_page(b, ch, v, t, n, neighbour(k - 1), neighbour(k + 1)))
 
     # Library ("Read") page: every book with every chapter.
     def section(label, group):
@@ -327,8 +437,9 @@ def build(xlsx):
   {section("Old Testament", books[:OT_COUNT])}
   {section("New Testament", books[OT_COUNT:])}
 </main>"""
-    write("read/index.html", page(f"Read | {SITE_NAME}", read_body,
-          f"Read every book of the {SITE_NAME}, a free, open-source Bible translation in clear English.", "/read/"))
+    write("read/index.html", page(f"Read the Bible Online | {SITE_NAME} ({ABBREV})", read_body,
+          f"Read all 66 books of the {SITE_NAME} ({ABBREV}) online free: Old Testament and New Testament "
+          f"in clear, simple English.", "/read/", jsonld=[breadcrumbs(("Read", "/read/"))]))
 
     # Search data: [ref, url, text]
     data = []
@@ -350,8 +461,25 @@ def build(xlsx):
                 .replace("{{GEN11}}", verse("Genesis", 1, 1))
                 .replace("{{VERSES}}", f"{total:,}")
                 .replace("{{CHAPTERS}}", f"{len(flat):,}"))
-    write("index.html", page(f"{SITE_NAME} | A free, open-source Bible in clear English", home,
-          f"The {SITE_NAME} is a free, open-source Bible translation written in clear, simple English that anyone can read.", "/"))
+    write("index.html", page(f"{SITE_NAME} ({ABBREV}) | A free, open-source Bible in clear English", home,
+          f"The {SITE_NAME} ({ABBREV}) is a free, open-source Bible translation written in clear, simple English. "
+          f"Read all 66 books online, search every verse, and use it free in your apps.", "/", jsonld=[
+              {
+                  "@context": "https://schema.org", "@type": "WebSite", "name": SITE_NAME,
+                  "alternateName": [ABBREV, "Readable Bible", "readable.bible"], "url": DOMAIN + "/",
+                  "potentialAction": {
+                      "@type": "SearchAction",
+                      "target": {"@type": "EntryPoint", "urlTemplate": DOMAIN + "/search/?q={search_term_string}"},
+                      "query-input": "required name=search_term_string",
+                  },
+              },
+              {
+                  "@context": "https://schema.org", "@type": "Book", "name": SITE_NAME, "alternateName": ABBREV,
+                  "url": DOMAIN + "/", "inLanguage": "en", "genre": "Bible translation",
+                  "isAccessibleForFree": True, "license": LICENSE_URL, "version": VERSION,
+                  "description": "A free, open-source Bible translation in clear, simple English.",
+              },
+          ]))
 
     sizes = build_open_data(books, flat)
 
@@ -363,15 +491,23 @@ def build(xlsx):
         for key, size in sizes.items():
             body = body.replace("{{SIZE:" + key + "}}", size)
         title = {"about": "About", "search": "Search", "developers": "Downloads & API"}[name]
-        write(f"{name}/index.html", page(f"{title} | {SITE_NAME}", body,
-              f"{title} - {SITE_NAME}, an open-source Bible translation.", f"/{name}/"))
+        descs = {
+            "about": f"About the {SITE_NAME} ({ABBREV}): an open-source Bible translation in clear, simple English, free for anyone to read and share.",
+            "search": f"Search every verse of the {SITE_NAME} ({ABBREV}) by word, phrase, or reference.",
+            "developers": f"Free downloads (JSON, CSV, USFM, text) and a free JSON API for the {SITE_NAME} ({ABBREV}), licensed {LICENSE_NAME}.",
+        }
+        write(f"{name}/index.html", page(f"{title} | {SITE_NAME}", body, descs[name], f"/{name}/"))
 
     write("404.html", page(f"Page not found | {SITE_NAME}",
           '<main class="page-head narrow"><h1>Page not found</h1><p>That page doesn&rsquo;t exist. '
           '<a href="/read/">Browse all books</a> or <a href="/search/">search the Bible</a>.</p></main>',
-          "Page not found", "/404.html"))
+          "Page not found", "/404.html", noindex=True))
 
-    urls = ["/", "/read/", "/search/", "/about/", "/developers/"] + [f"/{b['slug']}/{c}/" for b, c in flat]
+    urls = (["/", "/read/", "/search/", "/about/", "/developers/"]
+            + [f"/{b['slug']}/" for b in books]
+            + [f"/{b['slug']}/{c}/" for b, c in flat]
+            + [f"/{b['slug']}/{c}/{v}/" for b, c, v, _, _ in all_verses])
+    assert len(urls) <= 50000, "split the sitemap: over 50,000 URLs"
     write("sitemap.xml", '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
           + "".join(f"<url><loc>{DOMAIN}{u}</loc></url>\n" for u in urls) + "</urlset>\n")
     write("robots.txt", f"User-agent: *\nAllow: /\nSitemap: {DOMAIN}/sitemap.xml\n")
