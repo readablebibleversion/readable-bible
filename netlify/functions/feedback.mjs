@@ -3,7 +3,9 @@
 //   GET  /feedback?book=john&chapter=3                       -> { comments: [...] }
 //   POST /feedback { action: "comment", book, chapter, verse, text }
 //   POST /feedback { action: "vote", book, chapter, id, session }
+//   POST /feedback { action: "report", book, chapter, id }          (hidden after REPORT_LIMIT reports)
 //   POST /feedback { action: "delete", book, chapter, id, token }   (token = ADMIN_TOKEN env var)
+//   POST /feedback { action: "restore", book, chapter, id, token }  (un-hide a reported comment)
 import { getStore } from "@netlify/blobs";
 import { createHash, randomUUID } from "node:crypto";
 import { isAllowed } from "../lib/moderation.mjs";
@@ -11,6 +13,7 @@ import { isAllowed } from "../lib/moderation.mjs";
 const MAX_TEXT = 1000;
 const RATE_LIMIT = 5; // comments per IP per window
 const RATE_WINDOW_MS = 10 * 60 * 1000;
+const REPORT_LIMIT = 3; // reports from different visitors before a comment is hidden
 const SLUG_RE = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 const json = (body, status = 200) =>
@@ -22,6 +25,7 @@ const json = (body, status = 200) =>
 const stores = () => ({
   comments: getStore({ name: "comments", consistency: "strong" }),
   votes: getStore({ name: "votes", consistency: "strong" }),
+  reports: getStore({ name: "reports", consistency: "strong" }),
   rate: getStore({ name: "rate-limits", consistency: "strong" }),
 });
 
@@ -106,11 +110,35 @@ export default async (req, context) => {
     return json({ votes: comment.votes });
   }
 
-  if (action === "delete") {
+  if (action === "report") {
+    if (!validPlace(book, chapter) || !validId(body.id)) return json({ error: "Invalid report." }, 400);
+    const key = `${book}/${chapter}/${body.id}`;
+    const comment = await s.comments.get(key, { type: "json" });
+    if (!comment) return json({ error: "Comment not found." }, 404);
+    // One report per visitor (by hashed IP), so one person can't hide a comment alone.
+    const reportKey = `${body.id}/${hashIp(context.ip)}`;
+    if (await s.reports.get(reportKey)) return json({ ok: true });
+    await s.reports.set(reportKey, "1");
+    comment.reports = (comment.reports || 0) + 1;
+    if (comment.reports >= REPORT_LIMIT) comment.hidden = true;
+    await s.comments.setJSON(key, comment);
+    return json({ ok: true });
+  }
+
+  if (action === "delete" || action === "restore") {
     const admin = process.env.ADMIN_TOKEN;
     if (!admin || body.token !== admin) return json({ error: "Not allowed." }, 403);
     if (!validPlace(book, chapter) || !validId(body.id)) return json({ error: "Invalid comment." }, 400);
-    await s.comments.delete(`${book}/${chapter}/${body.id}`);
+    const key = `${book}/${chapter}/${body.id}`;
+    if (action === "delete") {
+      await s.comments.delete(key);
+    } else {
+      const comment = await s.comments.get(key, { type: "json" });
+      if (!comment) return json({ error: "Comment not found." }, 404);
+      comment.hidden = false;
+      comment.reports = 0;
+      await s.comments.setJSON(key, comment);
+    }
     return json({ ok: true });
   }
 
